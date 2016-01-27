@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="xaj-hydrological-model">
+    <output-path>$PROJECT_DIR$/out/artifacts/xaj_hydrological_model</output-path>
+    <root id="archive" name="xaj-hydrological-model.jar">
+      <element id="module-output" name="xaj-hydrological-model" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/guava-19.0-rc2.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
