@@ -5,8 +5,9 @@ import static com.google.common.base.Preconditions.*;
 
 /**
  * 新安江水文模型
- * <p>
+ *
  * Created by Wenxuan on 2016/1/11.
+ * Email: wenxuan-zhang@outlook.com
  */
 @SuppressWarnings("SpellCheckingInspection")
 public class XajModel {
@@ -35,21 +36,33 @@ public class XajModel {
     private double KKG;     // 壤中流水库消退系数
     private double Area;    // 水文单元面积
 
+    private RunoffGenerationResult runoffGenerationResult;          // 产流计算结果
+    private SourcePartitionResult sourcePartitionResult;            // 水源划分计算结果
+    private RunoffConcentrationResult runoffConcentrationResult;    // 汇流计算结果
 
     /**
-     * 产流计算
+     * 获取模型的计算结果
+     *
+     * @return 模型的最终计算结果（即汇流计算结果）
+     */
+    public RunoffConcentrationResult GetResult() {
+        return runoffConcentrationResult;
+    }
+
+    /**
+     * 执行产流计算
      *
      * @param P   降雨量序列
      * @param EI  蒸发皿蒸发量序列
      * @param wu0 初始时刻上层土壤含水量
      * @param wl0 初始时刻下层土壤含水量
      * @param wd0 初始时刻深层土壤含水量
-     * @return 产流计算结果
+     * @return 完成产流计算的模型实例
      */
-    public RunoffGenerationResult ComputeRunoffGeneration(double[] P, double[] EI, double wu0, double wl0, double wd0) {
+    public XajModel ComputeRunoffGeneration(double[] P, double[] EI, double wu0, double wl0, double wd0) {
         int n = CheckIdenticalLength(P, EI);
 
-        RunoffGenerationResult result = new RunoffGenerationResult(n);
+        runoffGenerationResult = new RunoffGenerationResult(n);
         LayeredSoilParam w0 = new LayeredSoilParam(wu0, wl0, wd0);  // 时段初土壤分层含水量
         double w0Sum = w0.getSum();                   // 时段初土壤总含水量
         double wmmax = WM * (1 + B) / (1 - Imp);      // 流域点最大蓄水容量
@@ -63,30 +76,31 @@ public class XajModel {
             w0 = ComputeLayeredW(w0, pe, r);          // 计算时段末土壤分层含水量
             w0Sum = w0.getSum();                      // 计算时段末土壤总含水量
 
-            result.Set(i, pe, r, w0Sum);
+            runoffGenerationResult.Set(i, pe, r, w0Sum);
         }
-        return result;
+        return this;
     }
 
     /**
-     * 水源划分计算
+     * 执行水源划分计算（需要先完成产流计算）
      *
-     * @param runoffYieldResult 产流计算结果
-     * @param s0                初始时刻流域平均自由含水量
-     * @param dt                时段长度
-     * @return 水源划分计算结果
+     * @param s0 初始时刻流域平均自由含水量
+     * @param dt 时段长度
+     * @return 完成水源划分计算的模型实例
      */
-    public SourcePartitionResult ComputeSourcePartition(RunoffGenerationResult runoffYieldResult, double s0, double dt) {
-        int n = runoffYieldResult.Length;
-        SourcePartitionResult result = new SourcePartitionResult(n);
+    public XajModel ComputeSourcePartition(double s0, double dt) {
+        checkNotNull(runoffGenerationResult, "尚未完成产流计算");
+
+        int n = runoffGenerationResult.Length;
+        sourcePartitionResult = new SourcePartitionResult(n);
 
         double KSSD = (1 - Math.pow(1 - (KG + KSS), dt / 24)) / (1 + KG / KSS);     // 转化后的壤中流出流系数
         double KGD = KSSD * KG / KSS;     // 转化后的地下水出流系数
         double Smax = (1 + EX) * SM;      // 流域点自由蓄水量最大值
         for (int i = 0; i < n; ++i) {
-            double pe = runoffYieldResult.PE[i];
-            double w = runoffYieldResult.W[i];
-            double r = runoffYieldResult.R[i];
+            double pe = runoffGenerationResult.PE[i];
+            double w = runoffGenerationResult.W[i];
+            double r = runoffGenerationResult.R[i];
 
             double au = Smax * (1 - Math.pow(1 - s0 / SM, 1 / (1 + EX)));
             double FR;              // 产流面积
@@ -105,28 +119,30 @@ public class XajModel {
             double rg = coef * KGD * FR;
             s0 = coef * (1 - KSSD - KGD);
 
-            result.Set(i, rimp, rs, rss, rg, s0);
+            sourcePartitionResult.Set(i, rimp, rs, rss, rg, s0);
         }
 
-        return result;
+        return this;
     }
 
     /**
-     * 汇流计算
+     * 执行汇流计算（需要先完成水源划分计算）
      *
-     * @param sourcePartitionResult 水源划分计算结果
-     * @param qrss0                 初始时刻壤中流流量
-     * @param qrg0                  初始时刻地下径流流量
-     * @param dt                    时段长度
-     * @return 汇流计算结果
+     * @param qrss0 初始时刻壤中流流量
+     * @param qrg0  初始时刻地下径流流量
+     * @param dt    时段长度
+     * @return 完成汇流计算的模型实例
      */
-    public RunoffConcentrationResult ComputeRunoffConcentration(SourcePartitionResult sourcePartitionResult, double qrss0, double qrg0, double dt) {
+    public XajModel ComputeRunoffConcentration(double qrss0, double qrg0, double dt) {
+        checkNotNull(sourcePartitionResult, "尚未完成水源划分计算");
+
         double[] QRS = UnitHydrograph(sourcePartitionResult.RS, sourcePartitionResult.RIMP, dt);    // 计算地表径流
         double[] QRSS = LinearReservoir(sourcePartitionResult.RSS, KKSS, qrss0, dt);    // 计算壤中流
         double[] QRG = LinearReservoir(sourcePartitionResult.RG, KKG, qrg0, dt);        // 计算地下径流
         double[] Q = ComputeQ(QRS, QRSS, QRG);                                          // 计算总径流
+        runoffConcentrationResult = new RunoffConcentrationResult(QRS, QRSS, QRG, Q);
 
-        return new RunoffConcentrationResult(QRS, QRSS, QRG, Q);
+        return this;
     }
 
     /**
@@ -135,12 +151,14 @@ public class XajModel {
      * @param wum 上层土壤含水量
      * @param wlm 下层土壤含水量
      * @param wdm 底层土壤含水量
+     * @return 完成流域土壤含水量参数设置的模型实例
      */
-    public void SetSoilWaterStorageParam(double wum, double wlm, double wdm) {
+    public XajModel SetSoilWaterStorageParam(double wum, double wlm, double wdm) {
         WUM = wum;
         WLM = wlm;
         WDM = wdm;
         WM = WUM + WLM + WDM;
+        return this;
     }
 
     /**
@@ -148,10 +166,12 @@ public class XajModel {
      *
      * @param k 蒸发皿折算系数
      * @param c 深层蒸散发系数
+     * @return 完成流域蒸散发参数设置的模型实例
      */
-    public void SetEvapotranspirationParam(double k, double c) {
+    public XajModel SetEvapotranspirationParam(double k, double c) {
         K = k;
         C = c;
+        return this;
     }
 
     /**
@@ -159,10 +179,12 @@ public class XajModel {
      *
      * @param b   蓄水容量曲线的指数
      * @param imp 不透水面积与全流域面积的比值
+     * @return 完成流域产流计算参数设置的模型实例
      */
-    public void SetRunoffGenerationParam(double b, double imp) {
+    public XajModel SetRunoffGenerationParam(double b, double imp) {
         B = b;
         Imp = imp;
+        return this;
     }
 
     /**
@@ -172,13 +194,15 @@ public class XajModel {
      * @param ex  自由水蓄水容量曲线指数
      * @param kss 自由水蓄水库对壤中流的出流系数
      * @param kg  自由水蓄水库对地下径流的出流系数
+     * @return 完成流域水源划分参数设置的模型实例
      */
-    public void SetSourcePartitionParam(double sm, double ex, double kss, double kg) {
+    public XajModel SetSourcePartitionParam(double sm, double ex, double kss, double kg) {
         checkArgument(kss + kg < 1, "Parameter validation failed: kss + kg < 1");
         SM = sm;
         EX = ex;
         KSS = kss;
         KG = kg;
+        return this;
     }
 
     /**
@@ -187,11 +211,13 @@ public class XajModel {
      * @param kkss 地下水库消退系数
      * @param kkg  壤中流水库消退系数
      * @param area 水文单元面积
+     * @return 完成流域汇流计算参数设置的模型实例
      */
-    public void SetRunoffConcentrationParam(double kkss, double kkg, double area) {
+    public XajModel SetRunoffConcentrationParam(double kkss, double kkg, double area) {
         KKSS = kkss;
         KKG = kkg;
         Area = area;
+        return this;
     }
 
     /**
