@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="xaj-hydrological-model-doc">
+    <output-path>$PROJECT_DIR$/out/artifacts/xaj_hydrological_model_doc</output-path>
+    <root id="archive" name="xaj-hydrological-model-doc.jar">
+      <element id="dir-copy" path="$PROJECT_DIR$/doc" />
+    </root>
+  </artifact>
+</component>
